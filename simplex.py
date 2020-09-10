@@ -1,343 +1,204 @@
-"""
-Read-me:
-Call functions in this order:
-    problem = gen_matrix(v,c)
-    constrain(problem, string)
-    obj(problem, string)
-    maxz(problem)
-gen_matrix() produces a matrix to be given constraints and an objective function to maximize or minimize.
-    It takes var (variable number) and cons (constraint number) as parameters.
-    gen_matrix(2,3) will create a 4x7 matrix by design.
-constrain() constrains the problem. It takes the problem as the first argument and a string as the second. The string should be
-    entered in the form of 1,2,G,10 meaning 1(x1) + 2(x2) >= 10.
-    Use 'L' for <= instead of 'G'
-Use obj() only after entering all constraints, in the form of 1,2,0 meaning 1(x1) +2(x2) +0
-    The final term is always reserved for a constant and 0 cannot be omitted.
-Use maxz() to solve a maximization LP problem. Use minz() to solve a minimization problem.
-Disclosure -- pivot() function, subcomponent of maxz() and minz(), has a couple bugs. So far, these have only occurred when
-    minz() has been called.
-"""
-
+import os
 import numpy as np
 
-# generates an empty matrix with adequate size for variables and constraints.
-def gen_matrix(var,cons):
-    tab = np.zeros((cons+1, var+cons+2))
-    return tab
 
-# checks the furthest right column for negative values ABOVE the last row. If negative values exist, another pivot is required.
-def next_round_r(table):
-    m = min(table[:-1,-1])
-    if m>= 0:
-        return False
-    else:
-        return True
+def leitura_arquivo():
+    linhas = []
+    arquivos = os.listdir(".")
+    for f in arquivos:
+        if f.endswith(".txt"):
+            f = open(f)
+            for linha in f:
+                linhas.append(linha.replace("\n", "").split(" "))
+    variaveis = len(linhas[0])
+    restricoes = len(linhas) - 1
+    return linhas, variaveis, restricoes
 
-# checks that the bottom row, excluding the final column, for negative values. If negative values exist, another pivot is required.
-def next_round(table):
-    lr = len(table[:,0])
-    m = min(table[lr-1,:-1])
-    if m>=0:
-        return False
-    else:
-        return True
 
-# Similar to next_round_r function, but returns row index of negative element in furthest right column
-def find_neg_r(table):
-    # lc = number of columns, lr = number of rows
-    lc = len(table[0,:])
-    # search every row (excluding last row) in final column for min value
-    m = min(table[:-1,lc-1])
-    if m<=0:
-        # n = row index of m location
-        n = np.where(table[:-1,lc-1] == m)[0][0]
-    else:
-        n = None
-    return n
+def geracao_tabela(variaveis, restricoes):
+    tabela = np.zeros((restricoes + 1, variaveis + restricoes + 2))
+    return tabela
 
-#returns column index of negative element in bottom row
-def find_neg(table):
-    lr = len(table[:,0])
-    m = min(table[lr-1,:-1])
-    if m<=0:
-        # n = row index for m
-        n = np.where(table[lr-1,:-1] == m)[0][0]
-    else:
-        n = None
-    return n
 
-# locates pivot element in tableu to remove the negative element from the furthest right column.
-def loc_piv_r(table):
-        total = []
-        # r = row index of negative entry
-        r = find_neg_r(table)
-        # finds all elements in row, r, excluding final column
-        row = table[r,:-1]
-        # finds minimum value in row (excluding the last column)
-        m = min(row)
-        # c = column index for minimum entry in row
-        c = np.where(row == m)[0][0]
-        # all elements in column
-        col = table[:-1,c]
-        # need to go through this column to find smallest positive ratio
-        for i, b in zip(col,table[:-1,-1]):
-            # i cannot equal 0 and b/i must be positive.
-            if i**2>0 and b/i>0:
-                total.append(b/i)
-            else:
-                # placeholder for elements that did not satisfy the above requirements. Otherwise, our index number would be faulty.
-                total.append(0)
-        element = max(total)
-        for t in total:
-            if t > 0 and t < element:
-                element = t
-            else:
-                continue
+def obtem_objetivo_restricoes(linhas):
+    objetive = []
+    restricoes = []
+    for linha in linhas:
+        if linhas.index(linha) == 0:
+            objetive = linha
+        else:
+            restricoes.append(linha)
+    return objetive, restricoes
 
-        index = total.index(element)
-        return [index,c]
-# similar process, returns a specific array element to be pivoted on.
-def loc_piv(table):
-    if next_round(table):
-        total = []
-        n = find_neg(table)
-        for i,b in zip(table[:-1,n],table[:-1,-1]):
-            if i**2>0 and b/i>0:
-                total.append(b/i)
-            else:
-                # placeholder for elements that did not satisfy the above requirements. Otherwise, our index number would be faulty.
-                total.append(0)
-        element = max(total)
-        for t in total:
-            if t > 0 and t < element:
-                element = t
-            else:
-                continue
 
-        index = total.index(element)
-        return [index,n]
+def converter(equacao):
+    equacao = [float(valor) for valor in equacao]
+    return equacao
 
-# Takes string input and returns a list of numbers to be arranged in tableu
-def convert(eq):
-    eq = eq.split(',')
-    if 'G' in eq:
-        g = eq.index('G')
-        del eq[g]
-        eq = [float(i)*-1 for i in eq]
-        return eq
-    if 'L' in eq:
-        l = eq.index('L')
-        del eq[l]
-        eq = [float(i) for i in eq]
-        return eq
 
-# The final row of the tablue in a minimum problem is the opposite of a maximization problem so elements are multiplied by (-1)
-def convert_min(table):
-    table[-1,:-2] = [-1*i for i in table[-1,:-2]]
-    table[-1,-1] = -1*table[-1,-1]
-    return table
-
-# generates x1,x2,...xn for the varying number of variables.
-def gen_var(table):
-    lc = len(table[0,:])
-    lr = len(table[:,0])
-    var = lc - lr -1
-    v = []
-    for i in range(var):
-        v.append('x'+str(i+1))
-    return v
-
-# pivots the tableau such that negative elements are purged from the last row and last column
-def pivot(row,col,table):
-    # number of rows
-    lr = len(table[:,0])
-    # number of columns
-    lc = len(table[0,:])
-    t = np.zeros((lr,lc))
-    pr = table[row,:]
-    if table[row,col]**2>0: #new
-        e = 1/table[row,col]
-        r = pr*e
-        for i in range(len(table[:,col])):
-            k = table[i,:]
-            c = table[i,col]
-            if list(k) == list(pr):
-                continue
-            else:
-                t[i,:] = list(k-r*c)
-        t[row,:] = list(r)
-        return t
-    else:
-        print('Cannot pivot on this element.')
-
-# checks if there is room in the matrix to add another constraint
-def add_cons(table):
-    lr = len(table[:,0])
-    # want to know IF at least 2 rows of all zero elements exist
-    empty = []
-    # iterate through each row
-    for i in range(lr):
-        total = 0
-        for j in table[i,:]:
-            # use squared value so (-x) and (+x) don't cancel each other out
-            total += j**2
-        if total == 0:
-            # append zero to list ONLY if all elements in a row are zero
-            empty.append(total)
-    # There are at least 2 rows with all zero elements if the following is true
-    if len(empty)>1:
-        return True
-    else:
-        return False
-
-# adds a constraint to the matrix
-def constrain(table,eq):
-    if add_cons(table) == True:
-        lc = len(table[0,:])
-        lr = len(table[:,0])
-        var = lc - lr -1
-        # set up counter to iterate through the total length of rows
+def preencher_restricoes(tabela, restricoes):
+    for restricao in restricoes:
+        quant_colunas = len(tabela[0, :])
+        quant_linhas = len(tabela[:, 0])
+        valores_tabela = quant_colunas - quant_linhas - 1
         j = 0
-        while j < lr:
-            # Iterate by row
-            row_check = table[j,:]
-            # total will be sum of entries in row
+        while j < quant_linhas:
+            verifica = tabela[j, :]
             total = 0
-            # Find first row with all 0 entries
-            for i in row_check:
-                total += float(i**2)
+            for i in verifica:
+                total += float(i ** 2)
             if total == 0:
-                # We've found the first row with all zero entries
-                row = row_check
+                linha = verifica
                 break
-            j +=1
-
-        eq = convert(eq)
+            j += 1
+        restricao = converter(restricao)
         i = 0
-        # iterate through all terms in the constraint function, excluding the last
-        while i<len(eq)-1:
-            # assign row values according to the equation
-            row[i] = eq[i]
-            i +=1
-        #row[len(eq)-1] = 1
-        row[-1] = eq[-1]
+        while i < len(restricao) - 1:
+            linha[i] = restricao[i]
+            i += 1
+        linha[-1] = restricao[-1]
+        linha[valores_tabela + j] = 1
 
-        # add slack variable according to location in tableau.
-        row[var+j] = 1
-    else:
-        print('Cannot add another constraint.')
 
-# checks to determine if an objective function can be added to the matrix
-def add_obj(table):
-    lr = len(table[:,0])
-    # want to know IF exactly one row of all zero elements exist
-    empty = []
-    # iterate through each row
-    for i in range(lr):
-        total = 0
-        for j in table[i,:]:
-            # use squared value so (-x) and (+x) don't cancel each other out
-            total += j**2
-        if total == 0:
-            # append zero to list ONLY if all elements in a row are zero
-            empty.append(total)
-    # There is exactly one row with all zero elements if the following is true
-    if len(empty)==1:
-        return True
-    else:
+def preencher_objetivo(tabela, equacao):
+    equacao = converter(equacao)
+    quant_linhas = len(tabela[:, 0])
+    linha = tabela[quant_linhas - 1, :]
+    for i in range(len(equacao)):
+        linha[i] = equacao[i] * -1
+    linha[-2] = 1
+
+
+def valida_func_linha_objetivo(tabela):
+    quant_linhas = len(tabela[:, 0])
+    m = min(tabela[quant_linhas - 1, :-1])
+    if m >= 0:
         return False
-
-# adds the onjective functio nto the matrix.
-def obj(table,eq):
-    if add_obj(table)==True:
-        eq = [float(i) for i in eq.split(',')]
-        lr = len(table[:,0])
-        row = table[lr-1,:]
-        i = 0
-    # iterate through all terms in the constraint function, excluding the last
-        while i<len(eq)-1:
-            # assign row values according to the equation
-            row[i] = eq[i]*-1
-            i +=1
-        row[-2] = 1
-        row[-1] = eq[-1]
     else:
-        print('You must finish adding constraints before the objective function can be added.')
+        return True
 
-# solves maximization problem for optimal solution, returns dictionary w/ keys x1,x2...xn and max.
-def maxz(table, output='summary'):
-    while next_round_r(table)==True:
-        table = pivot(loc_piv_r(table)[0],loc_piv_r(table)[1],table)
-    while next_round(table)==True:
-        table = pivot(loc_piv(table)[0],loc_piv(table)[1],table)
 
-    lc = len(table[0,:])
-    lr = len(table[:,0])
-    var = lc - lr -1
+def valida_func_coluna_objetivo(tabela):
+    m = min(tabela[:-1, -1])
+    if m >= 0:
+        return False
+    else:
+        return True
+
+
+def elemento_negativo_func_coluna_objetivo(tabela):
+    quant_linhas = len(tabela[:, 0])
+    m = min(tabela[quant_linhas - 1, :-1])
+    if m <= 0:
+        n = np.where(tabela[quant_linhas - 1, :-1] == m)[0][0]
+    else:
+        n = None
+    return n
+
+
+def localizar_pivo(tabela):
+    if valida_func_linha_objetivo(tabela):
+        total = []
+        n = elemento_negativo_func_coluna_objetivo(tabela)
+        for i, b in zip(tabela[:-1, n], tabela[:-1, -1]):
+            if b / i > 0 and i ** 2 > 0:
+                total.append(b / i)
+            else:
+                total.append(None)
+        m = min(filter(lambda x: x is not None, total))
+        index = total.index(m)
+        return [index, n]
+
+
+def pivo(linha, coluna, tabela):
+    quant_linhas = len(tabela[:, 0])
+    quant_colunas = len(tabela[0, :])
+    tabela_imagem = np.zeros((quant_linhas, quant_colunas))
+    linha_transformacao = tabela[linha, :]
+    if tabela[linha, coluna] ** 2 > 0:
+        valor = 1 / tabela[linha, coluna]
+        linha_transformada = linha_transformacao * valor
+        for i in range(len(tabela[:, coluna])):
+            k = tabela[i, :]
+            c = tabela[i, coluna]
+            if list(k) == list(linha_transformacao):
+                continue
+            else:
+                tabela_imagem[i, :] = list(k - linha_transformada * c)
+        tabela_imagem[linha, :] = list(linha_transformada)
+    return tabela_imagem
+
+
+def gerar_variaveis(tabela):
+    quant_colunas = len(tabela[0, :])
+    quant_linhas = len(tabela[:, 0])
+    variaveis = quant_colunas - quant_linhas - 1
+    lista_variaveis = []
+    for i in range(variaveis):
+        lista_variaveis.append("x" + str(i + 1))
+    return lista_variaveis
+
+
+def maximizacao(linhas, variaveis, restricoes):
+    tabela = geracao_tabela(variaveis, restricoes)
+    objetive, restricoes = obtem_objetivo_restricoes(linhas)
+    preencher_restricoes(tabela, restricoes)
+    preencher_objetivo(tabela, objetive)
+    print(tabela)
+    while valida_func_linha_objetivo(tabela) == True:
+        tabela = pivo(localizar_pivo(tabela)[0], localizar_pivo(tabela)[1], tabela)
+    quant_colunas = len(tabela[0, :])
+    quant_linhas = len(tabela[:, 0])
+    quant_var = quant_colunas - quant_linhas - 1
     i = 0
-    val = {}
-    for i in range(var):
-        col = table[:,i]
-        s = sum(col)
-        m = max(col)
-        if float(s) == float(m):
-            loc = np.where(col == m)[0][0]
-            val[gen_var(table)[i]] = table[loc,-1]
+    valores = {}
+    for i in range(quant_var):
+        coluna = tabela[:, i]
+        soma = sum(coluna)
+        maximo = max(coluna)
+        if float(soma) == float(maximo):
+            valor_localizado = np.where(coluna == maximo)[0][0]
+            valores[gerar_variaveis(tabela)[i]] = tabela[valor_localizado, -1]
         else:
-            val[gen_var(table)[i]] = 0
-    val['max'] = table[-1,-1]
-    for k,v in val.items():
-        val[k] = round(v,6)
-    if output == 'table':
-        return table
-    else:
-        return val
+            valores[gerar_variaveis(tabela)[i]] = 0
+    valores["maximo"] = tabela[-1, -1]
+    return valores
 
-# solves minimization problems for optimal solution, returns dictionary w/ keys x1,x2...xn and min.
-def minz(table, output='summary'):
-    table = convert_min(table)
 
-    while next_round_r(table)==True:
-        table = pivot(loc_piv_r(table)[0],loc_piv_r(table)[1],table)
-    while next_round(table)==True:
-        table = pivot(loc_piv(table)[0],loc_piv(table)[1],table)
-
-    lc = len(table[0,:])
-    lr = len(table[:,0])
-    var = lc - lr -1
+def maximizacao(linhas, variaveis, restricoes):
+    tabela = geracao_tabela(variaveis, restricoes)
+    objetive, restricoes = obtem_objetivo_restricoes(linhas)
+    preencher_restricoes(tabela, restricoes)
+    preencher_objetivo(tabela, objetive)
+    while valida_func_linha_objetivo(tabela) == True:
+        tabela = pivo(localizar_pivo(tabela)[0], localizar_pivo(tabela)[1], tabela)
+    quant_colunas = len(tabela[0, :])
+    quant_linhas = len(tabela[:, 0])
+    quant_var = quant_colunas - quant_linhas - 1
     i = 0
-    val = {}
-    for i in range(var):
-        col = table[:,i]
-        s = sum(col)
-        m = max(col)
-        if float(s) == float(m):
-            loc = np.where(col == m)[0][0]
-            val[gen_var(table)[i]] = table[loc,-1]
+    valores = {}
+    for i in range(quant_var):
+        coluna = tabela[:, i]
+        soma = sum(coluna)
+        maximo = max(coluna)
+        if float(soma) == float(maximo):
+            valor_localizado = np.where(coluna == maximo)[0][0]
+            valores[gerar_variaveis(tabela)[i]] = tabela[valor_localizado, -1]
         else:
-            val[gen_var(table)[i]] = 0
-    val['min'] = table[-1,-1]*-1
-    for k,v in val.items():
-        val[k] = round(v,6)
-    if output == 'table':
-        return table
-    else:
-        return val
+            valores[gerar_variaveis(tabela)[i]] = 0
+    valores["maximo"] = tabela[-1, -1]
+    return valores
+
+def escrita_arquivo(resultado):
+    linhas = []
+    arquivos = os.listdir(".")
+    for f in arquivos:
+        if f.endswith(".txt"):
+            f = open(f, "a+")
+            f.write(str(resultado))
+            f.close()
 
 if __name__ == "__main__":
-
-    m = gen_matrix(2,3)
-    constrain(m,'1,0,L,4')
-    constrain(m,'0,2,L,12')
-    constrain(m,'3,2,L,18')
-    obj(m,'3,5,0,0,0,0')
-    print(m)
-    print(maxz(m))
-
-    m = gen_matrix(2,4)
-    constrain(m,'2,5,G,30')
-    constrain(m,'-3,5,G,5')
-    constrain(m,'8,3,L,85')
-    constrain(m,'-9,7,L,42')
-    obj(m,'2,7,0')
-    print(minz(m))
+    linhas, variaveis, restricoes = leitura_arquivo()
+    valores = maximizacao(linhas, variaveis, restricoes)
+    escrita_arquivo(valores)
