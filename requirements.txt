@@ -1,0 +1,3 @@
+numpy
+# notebook (Utilizado pra interpretar o arquivo "simplex.ipynb")
+# jupyterlab (O mesmo que o anterior mas com interface web)

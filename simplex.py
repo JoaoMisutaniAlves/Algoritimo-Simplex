@@ -101,7 +101,7 @@ def localizar_pivo(tabela):
         total = []
         n = elemento_negativo_func_coluna_objetivo(tabela)
         for i, b in zip(tabela[:-1, n], tabela[:-1, -1]):
-            if b / i > 0 and i ** 2 > 0:
+            if ( b / i ) > 0 and i ** 2 > 0:
                 total.append(b / i)
             else:
                 total.append(None)
@@ -195,6 +195,7 @@ def escrita_arquivo(resultado):
     for f in arquivos:
         if f.endswith(".txt"):
             f = open(f, "a+")
+            f.write("\n")
             f.write(str(resultado))
             f.close()
 
